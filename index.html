@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>学習進捗アプリ</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>学習進捗アプリ</h1>
+
+        <div class="content">
+            <div class="card">
+                <h2>📊 学習時間グラフ</h2>
+                <canvas id="studyChart"></canvas>
+            </div>
+            
+            <div class="card">
+                <h2>📝 今日の学習を記録</h2>
+                <label for="subject">教科:</label>
+                <select id="subject">
+                    <option value="国語">国語</option>
+                    <option value="数学">数学</option>
+                    <option value="英語">英語</option>
+                </select>
+                <label for="hours">時間:</label>
+                <input type="number" id="hours" min="0" step="0.5">
+                <button onclick="addStudyLog()">記録する</button>
+            </div>
+
+            <div class="card">
+                <h2>✅ 日々のタスク</h2>
+                <div class="task-list" id="taskList"></div>
+                <input type="text" id="newTask" placeholder="新しいタスクを追加">
+                <button onclick="addTask()">追加</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 学習記録とタスクのデータを取得
+        async function fetchData() {
+            const response = await fetch('/api/data');
+            const data = await response.json();
+            return data;
+        }
+
+        // グラフを描画
+        async function renderChart() {
+            const data = await fetchData();
+            const studyLog = data.study_log;
+
+            const labels = studyLog.map(log => {
+                const date = new Date(log.date);
+                return `${date.getMonth() + 1}/${date.getDate()}`;
+            });
+            const hours = studyLog.map(log => log.hours);
+
+            const ctx = document.getElementById('studyChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '学習時間 (時間)',
+                        data: hours,
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // 学習記録を送信
+        async function addStudyLog() {
+            const subject = document.getElementById('subject').value;
+            const hours = parseFloat(document.getElementById('hours').value);
+
+            if (isNaN(hours) || hours <= 0) {
+                alert('有効な時間を入力してください。');
+                return;
+            }
+
+            const newLog = {
+                date: new Date().toISOString(),
+                subject: subject,
+                hours: hours
+            };
+
+            await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ study_log: newLog })
+            });
+
+            location.reload(); // ページを再読み込みしてグラフを更新
+        }
+
+        // タスクを追加
+        async function addTask() {
+            const taskText = document.getElementById('newTask').value;
+            if (taskText.trim() === '') return;
+
+            const data = await fetchData();
+            const tasks = data.tasks;
+            tasks.push({ text: taskText, completed: false });
+
+            await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tasks: tasks })
+            });
+
+            location.reload();
+        }
+
+        // タスクを表示・更新
+        async function renderTasks() {
+            const data = await fetchData();
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = '';
+            
+            data.tasks.forEach((task, index) => {
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = task.completed;
+                checkbox.onclick = async () => {
+                    data.tasks[index].completed = checkbox.checked;
+                    await fetch('/api/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tasks: data.tasks })
+                    });
+                };
+                
+                const textSpan = document.createElement('span');
+                textSpan.textContent = task.text;
+                if (task.completed) {
+                    textSpan.style.textDecoration = 'line-through';
+                }
+                
+                taskItem.appendChild(checkbox);
+                taskItem.appendChild(textSpan);
+                taskList.appendChild(taskItem);
+            });
+        }
+
+        // アプリ起動時にデータを読み込み、グラフとタスクを表示
+        window.onload = () => {
+            renderChart();
+            renderTasks();
+        };
+    </script>
+</body>
+</html>
